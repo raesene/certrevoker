@@ -1,0 +1,66 @@
+{{define "reticle"}}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="12" r="7.5"/><path d="M12 1.5v5M12 17.5v5M1.5 12h5M17.5 12h5"/><circle cx="12" cy="12" r="1.6" fill="#9A512C" stroke="none"/></svg>{{end}}
+
+{{define "header"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>certrevoker · client certificate revocation</title>
+<link rel="preload" href="/static/fonts/manrope.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/static/fonts/hanken-grotesk.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="wrap">
+<header class="masthead">
+  <a class="wordmark" href="/">{{template "reticle"}}<span>certrevoker</span><span class="tag">PoC</span></a>
+  {{with .Session}}
+  <nav aria-label="Main">
+    <a href="/"{{if or (eq $.Page "inventory") (eq $.Page "cert")}} aria-current="page"{{end}}>Inventory</a>
+    <a href="/inspect"{{if eq $.Page "inspect"}} aria-current="page"{{end}}>Inspect a certificate</a>
+  </nav>
+  <div class="who">
+    <span class="id" title="{{join .Groups ", "}}">{{.User}}</span>
+    {{if not .CanRevoke}}<span class="chip">read-only</span>{{end}}
+    <form method="post" action="/logout" class="inline">
+      <input type="hidden" name="csrf" value="{{.CSRF}}">
+      <button class="link">Log out</button>
+    </form>
+  </div>
+  {{end}}
+</header>
+<main>
+{{with .Flash}}<div class="toast" role="status">{{.}}</div>{{end}}
+{{end}}
+
+{{define "footer"}}
+</main>
+<footer>
+Revocations are enforced by a kube-apiserver authorization webhook that returns an explicit deny.
+Certificates asserting <code>system:masters</code> bypass every authorizer and can't be revoked this way.
+</footer>
+</div>
+</body>
+</html>
+{{end}}
+
+{{define "revokeForm"}}
+<form method="post" action="/revoke" class="revoke">
+  <input type="hidden" name="csrf" value="{{.CSRF}}">
+  <input type="hidden" name="id" value="{{.ID}}">
+  {{with .From}}<input type="hidden" name="from" value="{{.}}">{{end}}
+  {{with .CN}}<input type="hidden" name="cn" value="{{.}}">{{end}}
+  {{with .NotAfter}}<input type="hidden" name="notAfter" value="{{.}}">{{end}}
+  <input type="text" name="reason" placeholder="Reason" maxlength="256" aria-label="Reason for revoking">
+  <button class="sign small">Revoke</button>
+</form>
+{{end}}
+
+{{define "unrevokeForm"}}
+<form method="post" action="/unrevoke" class="inline">
+  <input type="hidden" name="csrf" value="{{.CSRF}}">
+  <input type="hidden" name="id" value="{{.ID}}">
+  {{with .From}}<input type="hidden" name="from" value="{{.}}">{{end}}
+  <button class="quiet small">Remove revocation</button>
+</form>
+{{end}}

@@ -1,0 +1,56 @@
+{{template "header" .}}
+{{$s := .Session}}
+<div class="page-head">
+  <div>
+    <h1>{{with .Issued}}{{if .Spec.CommonName}}{{.Spec.CommonName}}{{else if .Status.SeenAsUser}}{{.Status.SeenAsUser}}{{else}}Certificate{{end}}{{else}}{{with .Revocation}}{{if .Spec.CommonName}}{{.Spec.CommonName}}{{else}}Certificate{{end}}{{else}}Certificate{{end}}{{end}}</h1>
+    <p><code class="wrapbreak">{{.ID}}</code></p>
+  </div>
+  <p><a href="/">← Back to inventory</a></p>
+</div>
+
+{{if .Masters}}<div class="alert"><strong>Not enforceable.</strong> This certificate asserts <code>system:masters</code>. kube-apiserver authorizes that group before any webhook, so a revocation here has no effect. Keep such certificates offline, or rotate the CA.</div>{{end}}
+
+<div class="grid">
+  <section class="cell span-5">
+    {{with .Revocation}}
+    <h2><span class="pin-dot"></span>Revoked</h2>
+    <dl class="facts">
+      <dt>Reason</dt><dd>{{if .Spec.Reason}}{{.Spec.Reason}}{{else}}<span class="muted">none given</span>{{end}}</dd>
+      <dt>Revoked by</dt><dd>{{.Spec.RevokedBy}}<span class="sub">{{fmtTime .CreationTimestamp}} · the audit log is authoritative</span></dd>
+      <dt>Denied since</dt><dd class="mono{{if .Status.DeniedRequests}} pinned{{end}}">{{.Status.DeniedRequests}} requests{{with .Status.LastDenied}}<span class="sub">last {{fmtTime .}}{{end}}{{with .Status.LastDeniedUser}} as {{.}}{{end}}{{if .Status.LastDenied}}</span>{{end}}</dd>
+      <dt>Removed after</dt><dd>{{if .Spec.NotAfter}}<span class="mono">{{fmtTime .Spec.NotAfter}}</span><span class="sub">when the certificate expires</span>{{else}}<span class="muted">never (expiry unknown)</span>{{end}}</dd>
+    </dl>
+    {{if $s.CanRevoke}}<div class="stack"><p></p>{{template "unrevokeForm" (dict "CSRF" $s.CSRF "ID" $.ID "From" "cert")}}</div>{{end}}
+    {{else}}
+    <h2>Active</h2>
+    <p class="muted">Requests made with this certificate are authorized normally. Revoking it makes the webhook deny every request that uses it, within the API server's cache TTL (about 10s).</p>
+    {{if $s.CanRevoke}}<div class="stack"><p></p>{{template "revokeForm" (dict "CSRF" $s.CSRF "ID" .ID "From" "cert")}}</div>{{end}}
+    {{end}}
+  </section>
+
+  <section class="cell span-7">
+    <h2>Inventory record</h2>
+    {{with .Issued}}
+    <dl class="facts">
+      <dt>Source</dt><dd>{{.Spec.Source}}</dd>
+      {{with .Spec.CommonName}}<dt>Subject CN</dt><dd>{{.}}</dd>{{end}}
+      {{with .Spec.Organizations}}<dt>Subject O</dt><dd>{{join . ", "}}</dd>{{end}}
+      {{with .Spec.SerialNumber}}<dt>Serial</dt><dd class="mono wrapbreak">{{.}}</dd>{{end}}
+      {{with .Spec.Issuer}}<dt>Issuer</dt><dd>{{.}}</dd>{{end}}
+      {{with .Spec.NotBefore}}<dt>Not before</dt><dd class="mono">{{fmtTime .}}</dd>{{end}}
+      {{with .Spec.NotAfter}}<dt>Not after</dt><dd class="mono">{{fmtTime .}}</dd>{{end}}
+      {{with .Spec.SignerName}}<dt>Signer</dt><dd>{{.}}</dd>{{end}}
+      {{with .Spec.CSRName}}<dt>CSR</dt><dd>{{.}}<span class="sub">uid {{$.Issued.Spec.CSRUID}}</span></dd>{{end}}
+      {{with .Spec.Requestor}}<dt>Requested by</dt><dd>{{.}}</dd>{{end}}
+      {{with .Status.SeenAsUser}}<dt>Seen as user</dt><dd>{{.}}</dd>{{end}}
+      {{with .Status.SeenGroups}}<dt>Seen with groups</dt><dd>{{join . ", "}}</dd>{{end}}
+      {{with .Status.FirstSeen}}<dt>First seen</dt><dd class="mono">{{fmtTime .}}</dd>{{end}}
+      {{with .Status.LastSeen}}<dt>Last seen</dt><dd class="mono">{{fmtTime .}}</dd>{{end}}
+    </dl>
+    {{with .Spec.CertificatePEM}}<details><summary>Certificate PEM</summary><pre>{{.}}</pre></details>{{end}}
+    {{else}}
+    <p class="muted">Not in the inventory: it wasn't issued through the CSR API while certrevoker was running, and the webhook hasn't seen it in use.</p>
+    {{end}}
+  </section>
+</div>
+{{template "footer" .}}

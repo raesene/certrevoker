@@ -1,0 +1,22 @@
+{{template "header" .}}
+<div class="hero">
+  <div class="stack-col">
+    <section class="head">
+      <span class="sub">Kubernetes client certificate revocation</span>
+      <h1>Revoke the certificate, not the CA.</h1>
+      <p class="lede">Log in with a Kubernetes bearer token. The portal checks it with a <code>TokenReview</code>, then makes every API call with it, so RBAC decides what you can see and revoke, and the audit log records you.</p>
+      {{with .Error}}<div class="alert">{{.}}</div>{{end}}
+      <form method="post" action="/login" class="stack">
+        <textarea name="token" rows="5" placeholder="eyJhbGciOi…" autocomplete="off" spellcheck="false" required aria-label="Bearer token"></textarea>
+        <button class="primary">Log in</button>
+      </form>
+      <p class="hint">For example: <code>kubectl -n certrevoker create token revocation-admin --duration=1h</code></p>
+    </section>
+    <div class="figs">
+      <div class="figure"><span class="what">Identified by</span><span class="num">X509SHA256</span><span class="sub">hash of the certificate, as kube-apiserver reports it</span></div>
+      <div class="figure"><span class="what">CA rotations</span><span class="num">0</span><span class="sub">needed to revoke one certificate</span></div>
+    </div>
+  </div>
+  <div class="image" role="img" aria-label="A precision instrument drawn in fine slate lines with one cyan arc and a copper pin"></div>
+</div>
+{{template "footer" .}}

@@ -1,0 +1,78 @@
+{{template "header" .}}
+{{$s := .Session}}
+<div class="page-head">
+  <div>
+    <h1>Client certificates</h1>
+    <p>Every client certificate the cluster has issued through the CSR API, or that the authorization webhook has seen in use. Revoke one and requests made with it are denied.</p>
+  </div>
+  <form method="get" action="/" class="row search-cell" role="search">
+    <input type="hidden" name="view" value="{{.View}}">
+    <input type="search" name="q" value="{{.Q}}" placeholder="Filter by user, group, signer or ID" aria-label="Filter">
+    <button class="quiet">Filter</button>
+  </form>
+</div>
+
+<nav class="grid" aria-label="Views">
+  <a class="figure span-3{{if eq .View "active"}} on{{end}}" href="/?view=active"{{if eq .View "active"}} aria-current="page"{{end}}>
+    <span class="what">Active</span><span class="num">{{index .Counts "active"}}</span><span class="sub">unexpired, not revoked</span></a>
+  <a class="figure span-3{{if eq .View "revoked"}} on{{else if gt (index .Counts "revoked") 0}} pinned{{end}}" href="/?view=revoked"{{if eq .View "revoked"}} aria-current="page"{{end}}>
+    <span class="what">Revoked</span><span class="num">{{if and (ne .View "revoked") (gt (index .Counts "revoked") 0)}}<span class="pin-dot"></span>{{end}}{{index .Counts "revoked"}}</span><span class="sub">denied by the webhook</span></a>
+  <a class="figure span-3{{if eq .View "expired"}} on{{end}}" href="/?view=expired"{{if eq .View "expired"}} aria-current="page"{{end}}>
+    <span class="what">Expired</span><span class="num">{{index .Counts "expired"}}</span><span class="sub">rejected by kube-apiserver anyway</span></a>
+  <a class="figure span-3{{if eq .View "all"}} on{{end}}" href="/?view=all"{{if eq .View "all"}} aria-current="page"{{end}}>
+    <span class="what">All</span><span class="num">{{index .Counts "all"}}</span><span class="sub">{{index .Counts "active"}} + {{index .Counts "revoked"}} + {{index .Counts "expired"}}</span></a>
+</nav>
+
+{{if .Rows}}
+<div class="ledger-wrap">
+<table class="ledger">
+<thead><tr>
+  <th>Identity (CN)</th><th>Groups (O)</th><th>Valid</th><th>Last seen</th><th>Credential ID</th><th>Status</th>{{if $s.CanRevoke}}<th><span class="sr">Action</span></th>{{end}}
+</tr></thead>
+<tbody>
+{{range .Rows}}
+<tr class="{{if .Revoked}}revoked{{else if .Expired}}expired{{end}}">
+  <td class="name" data-label="Identity"><a href="/cert?id={{.ID}}">{{if .Identity}}{{.Identity}}{{else}}unknown{{end}}</a>
+      <span class="sub"{{with .Signer}} title="{{.}}"{{end}}>{{.Source}}{{with .Signer}} · {{shortSigner .}}{{end}}</span>{{with .Requestor}}<span class="sub">by {{.}}</span>{{end}}</td>
+  <td class="fig" data-label="Groups"><div class="chips">{{range .Groups}}<span class="chip{{if eq . "system:masters"}} bad{{end}}">{{.}}</span>{{else}}<span class="muted">none</span>{{end}}</div></td>
+  <td class="fig" data-label="Valid">{{if .NotAfter}}to {{fmtDate .NotAfter}}<span class="sub">{{if .NotBefore}}from {{fmtDate .NotBefore}}{{else}}{{fmtClock .NotAfter}}{{end}}</span>{{else}}<span class="muted">unknown</span><span class="sub">not issued via CSR</span>{{end}}</td>
+  <td class="fig" data-label="Last seen">{{if .LastSeen}}<span title="{{fmtTime .LastSeen}}">{{relative .LastSeen}}</span>{{else}}<span class="muted">never</span>{{end}}</td>
+  <td class="fig" data-label="Credential ID"><code title="{{.ID}}">{{hexPrefix .ID}}</code></td>
+  <td class="fig{{if .Revoked}} pinned{{end}}" data-label="Status">
+    {{if .Revoked}}<span class="status"><span class="pin-dot"></span>revoked</span>
+      {{with .Revocation}}{{if .Status.DeniedRequests}}<span class="sub">{{.Status.DeniedRequests}} denied since</span>{{end}}{{end}}
+    {{else if .Expired}}<span class="status gone">expired</span>
+    {{else}}<span class="status ok">active</span>{{end}}
+    {{if .Masters}}<span class="status bad" title="system:masters bypasses authorization webhooks">not enforceable</span>{{end}}
+  </td>
+  {{if $s.CanRevoke}}<td class="act">
+    {{if .Revoked}}{{template "unrevokeForm" (dict "CSRF" $s.CSRF "ID" .ID)}}
+    {{else if not .Expired}}{{template "revokeForm" (dict "CSRF" $s.CSRF "ID" .ID)}}{{end}}
+  </td>{{end}}
+</tr>
+{{end}}
+</tbody>
+{{with .Foot}}
+<tfoot><tr>
+  <td>Foot · {{.Total}}<span class="sub">{{.CSR}} CSR + {{.Observed}} observed + {{.Manual}} manual</span></td>
+  <td class="fig">{{if .Masters}}{{.Masters}} system:masters{{else}}no system:masters{{end}}<span class="sub">not revocable here</span></td>
+  <td class="fig">{{if .NextExpiry}}{{fmtDate .NextExpiry}}{{else}}–{{end}}<span class="sub">next expiry · {{.UnknownExpiry}} unknown</span></td>
+  <td class="fig">{{.SeenHour}}<span class="sub">seen in last hour · {{.NeverSeen}} never</span></td>
+  <td class="fig">{{.Total}}<span class="sub">distinct IDs</span></td>
+  <td class="fig">{{.Active}} / {{.Revoked}}<span class="sub">active / revoked</span></td>
+  {{if $s.CanRevoke}}<td class="act"></td>{{end}}
+</tr></tfoot>
+{{end}}
+</table>
+</div>
+{{else}}
+<div class="cell empty">{{template "reticle"}}<div><h3>Nothing in this view</h3>
+<p class="muted">{{if .Q}}No certificate matches “{{.Q}}”. <a href="/?view={{.View}}">Clear the filter</a>.{{else}}No certificates are {{.View}} right now. <a href="/?view=all">See all certificates</a>.{{end}}</p></div></div>
+{{end}}
+
+<div class="grid">
+  <div class="cell tight span-4"><span class="label">CSR</span>Issued through the CertificateSigningRequest API and recorded before the CSR is garbage collected, about an hour after approval.</div>
+  <div class="cell tight span-4"><span class="label">Observed</span>Only seen in use by the authorization webhook, such as kubeadm-signed kubeconfigs. Validity is unknown unless you paste the certificate on the Inspect page.</div>
+  <div class="cell tight span-4"><span class="label">Manual</span>Revoked by credential ID without an inventory record, for example an ID taken from an audit log entry.</div>
+</div>
+{{template "footer" .}}

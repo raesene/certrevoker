@@ -1,0 +1,54 @@
+{{template "header" .}}
+{{$s := .Session}}
+<div class="page-head">
+  <div>
+    <h1>Inspect a certificate</h1>
+    <p>Paste a PEM certificate, or a kubeconfig with embedded <code>client-certificate-data</code>, to compute the credential ID kube-apiserver gives it. Only certificate data is read. Anything else, including private keys, is ignored and never stored.</p>
+  </div>
+</div>
+
+<div class="grid">
+  <section class="cell span-7">
+    <h2>Certificate or kubeconfig</h2>
+    {{with .Error}}<div class="alert">{{.}}</div>{{end}}
+    <form method="post" action="/inspect" class="stack">
+      <input type="hidden" name="csrf" value="{{$s.CSRF}}">
+      <textarea name="input" rows="10" spellcheck="false" placeholder="-----BEGIN CERTIFICATE-----" aria-label="Certificate or kubeconfig"></textarea>
+      <button class="primary">Inspect</button>
+    </form>
+  </section>
+  <section class="cell span-5">
+    <h2>Revoke by credential ID</h2>
+    <p class="muted">For an ID taken from an audit log entry (<code>user.extra["authentication.kubernetes.io/credential-id"]</code>) or from <code>kubectl auth whoami -o yaml</code> run with the certificate.</p>
+    {{if $s.CanRevoke}}
+    <form method="post" action="/revoke" class="stack">
+      <p></p>
+      <input type="hidden" name="csrf" value="{{$s.CSRF}}">
+      <input type="text" name="id" placeholder="X509SHA256=…" required aria-label="Credential ID">
+      <input type="text" name="reason" placeholder="Reason" maxlength="256" aria-label="Reason for revoking">
+      <button class="sign">Revoke</button>
+    </form>
+    {{else}}<p class="muted">You don't have permission to create revocations.</p>{{end}}
+  </section>
+</div>
+
+{{range .Results}}
+<div class="grid">
+  <section class="cell span-12">
+    <h2>{{.Info.CommonName}}</h2>
+    <dl class="facts">
+      <dt>Credential ID</dt><dd class="mono wrapbreak"><a href="/cert?id={{.Info.CredentialID}}">{{.Info.CredentialID}}</a></dd>
+      <dt>Groups (O)</dt><dd><div class="chips">{{range .Info.Organizations}}<span class="chip{{if eq . "system:masters"}} bad{{end}}">{{.}}</span> {{else}}<span class="muted">none</span>{{end}}</div></dd>
+      <dt>Serial</dt><dd class="mono wrapbreak">{{.Info.SerialNumber}}</dd>
+      <dt>Issuer</dt><dd>{{.Info.Issuer}}</dd>
+      <dt>Valid</dt><dd class="mono">{{fmtTime .Info.NotBefore}} → {{fmtTime .Info.NotAfter}}{{if .Expired}} <span class="status gone">expired</span>{{end}}</dd>
+      <dt>Client auth</dt><dd>{{if .Info.ClientAuth}}yes{{else}}no, so it can't authenticate to the API server{{end}}</dd>
+      <dt>In inventory</dt><dd>{{if .InInventory}}yes{{else}}no{{end}}</dd>
+      <dt>Status</dt><dd{{if .Revoked}} class="pinned"{{end}}>{{if .Revoked}}<span class="pin-dot"></span>revoked{{else if .Expired}}expired{{else}}active{{end}}</dd>
+    </dl>
+    {{if .Masters}}<div class="alert"><strong>Not enforceable.</strong> Asserts <code>system:masters</code>: a revocation will not be enforced.</div>{{end}}
+    {{if and $s.CanRevoke (not .Revoked) (not .Expired)}}<div class="stack"><p></p>{{template "revokeForm" (dict "CSRF" $s.CSRF "ID" .Info.CredentialID "CN" .Info.CommonName "NotAfter" (rfc3339 .Info.NotAfter))}}</div>{{end}}
+  </section>
+</div>
+{{end}}
+{{template "footer" .}}

@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>certrevoker: revoke a Kubernetes client certificate, not the CA</title>
+<meta name="description" content="A proof of concept for revoking individual Kubernetes x509 client certificates without rotating the cluster CA: an authorization webhook, a certificate inventory and an admin portal.">
+<meta property="og:title" content="certrevoker: revoke the certificate, not the CA">
+<meta property="og:description" content="Block a specific Kubernetes client certificate within seconds, with no changes to Kubernetes. A proof of concept for kubernetes/kubernetes#18982.">
+<meta property="og:type" content="website">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="preload" href="assets/fonts/manrope.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="assets/fonts/hanken-grotesk.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<div class="wrap">
+
+<header class="masthead">
+  <a class="wordmark" href="./"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="12" r="7.5"/><path d="M12 1.5v5M12 17.5v5M1.5 12h5M17.5 12h5"/><circle cx="12" cy="12" r="1.6" fill="#9A512C" stroke="none"/></svg><span>certrevoker</span></a>
+  <nav aria-label="Sections">
+    <a href="#problem">The problem</a>
+    <a href="#how">How it works</a>
+    <a href="#results">Results</a>
+    <a href="#limits">Limits</a>
+    <a href="#deploy">Deploy</a>
+  </nav>
+  <a class="action" href="https://github.com/raesene/certrevoker">GitHub</a>
+</header>
+
+<main>
+
+<section class="hero" aria-labelledby="title">
+  <div class="hero-left">
+    <div class="head">
+      <span class="eyebrow">Proof of concept · kubernetes/kubernetes#18982</span>
+      <h1 id="title">Revoke the certificate, not the CA.</h1>
+      <p class="lede">Kubernetes can't revoke an x509 client certificate. Lose a laptop holding a kubeconfig and the credential stays valid until it expires, unless you rotate the whole cluster CA. certrevoker blocks one specific certificate within seconds, using only extension points Kubernetes already has.</p>
+      <a class="button" href="https://github.com/raesene/certrevoker">View on GitHub</a>
+    </div>
+    <div class="pair">
+      <div class="figure"><span class="what">Revoke to deny</span><span class="num">10s</span><span class="sub">measured at kube-apiserver, set by the webhook cache TTL</span></div>
+      <div class="figure"><span class="what">CA rotations</span><span class="num">0</span><span class="sub">and no changes to Kubernetes itself</span></div>
+    </div>
+  </div>
+  <div class="image" role="img" aria-label="A pin-tumbler lock drawn in fine slate lines, with one cyan arc and one copper pin pushed out of the stack"></div>
+</section>
+
+<section id="problem" aria-labelledby="problem-title">
+  <div class="section-head">
+    <h2 id="problem-title">The problem</h2>
+    <p>kube-apiserver accepts any client certificate that chains to its CA and hasn't expired. It has no revocation list and no OCSP check, and nothing else stops a certificate.</p>
+  </div>
+  <div class="grid">
+    <div class="figure span-3"><span class="what">Open since</span><span class="num">2015</span><span class="sub">kubernetes/kubernetes#18982, “Support for managing revoked certs”</span></div>
+    <div class="cell span-3"><h3>No revocation check</h3><p>kube-apiserver checks the chain and the expiry date, nothing more. There is no CRL or OCSP support, and no denylist.</p></div>
+    <div class="cell span-3"><h3>Deleting the CSR does nothing</h3><p>Certificates issued through the CSR API keep working after the CSR is gone, and Kubernetes deletes approved CSRs within an hour anyway.</p></div>
+    <div class="cell span-3"><h3>RBAC isn't enough</h3><p>Remove the bindings and the user still gets everything granted to <code>system:authenticated</code>. <code>system:masters</code> skips authorization altogether.</p></div>
+  </div>
+</section>
+
+<section id="how" aria-labelledby="how-title">
+  <div class="section-head">
+    <h2 id="how-title">How it works</h2>
+    <p>Since v1.32, kube-apiserver tags every certificate-authenticated request with the certificate's SHA-256, as <code>authentication.kubernetes.io/credential-id</code>. certrevoker puts an authorization webhook in front of Node and RBAC that denies any request carrying a revoked ID.</p>
+  </div>
+
+  <ol class="chain" aria-label="The kube-apiserver authorizer chain with certrevoker">
+    <li class="cell"><span class="sub">1 · request</span>Client certificate</li>
+    <li class="cell"><span class="sub">2 · authentication</span>X509SHA256=…</li>
+    <li class="cell"><span class="sub">3 · always first</span>system:masters</li>
+    <li class="cell live"><span class="sub">4 · webhook</span>certrevoker: deny if revoked</li>
+    <li class="cell"><span class="sub">5 · authorizer</span>Node</li>
+    <li class="cell"><span class="sub">6 · authorizer</span>RBAC</li>
+  </ol>
+
+  <div class="grid">
+    <div class="cell span-4">
+      <span class="label">Webhook</span>
+      <h3>An explicit deny, before RBAC</h3>
+      <p>The webhook returns <em>Deny</em> for a revoked credential ID and <em>no opinion</em> otherwise. An explicit deny stops the chain, so no RBAC grant applies to the revoked certificate. Kubelets and aggregated API servers authorize through SubjectAccessReviews, which reach the same webhook.</p>
+    </div>
+    <div class="cell span-4">
+      <span class="label">Inventory</span>
+      <h3>A record Kubernetes doesn't keep</h3>
+      <p>Every client certificate issued through the CSR API is copied into an <code>IssuedCertificate</code> object before the CSR disappears. Credential IDs the webhook sees in use are recorded too, which catches certificates kubeadm signed directly, such as <code>admin.conf</code>.</p>
+    </div>
+    <div class="cell span-4">
+      <span class="label">Portal</span>
+      <h3>Revoke with a reason</h3>
+      <p>Log in with a Kubernetes token. The portal uses that token for every call, so RBAC decides who can revoke and the audit log records them. Paste a certificate or kubeconfig to find its ID. Revocations are ordinary objects, so <code>kubectl</code> works as well.</p>
+    </div>
+  </div>
+</section>
+
+<section id="results" aria-labelledby="results-title">
+  <div class="section-head">
+    <h2 id="results-title">Tested end to end</h2>
+    <p>Run with <code>scripts/e2e.sh</code> on a kubeadm 1.37.2 cluster with one control-plane node and one worker. Every scenario was checked against the live cluster.</p>
+  </div>
+  <div class="ledger-wrap">
+  <table class="ledger">
+    <thead><tr><th>Scenario</th><th>What happened</th><th>Time</th><th>Check</th></tr></thead>
+    <tbody>
+      <tr><td class="name">Revoke in the portal, then call kube-apiserver</td><td>Denied: <code>client certificate X509SHA256=… has been revoked: laptop stolen</code></td><td class="fig">10s</td><td class="fig ok">pass</td></tr>
+      <tr><td class="name">Revoked certificate, straight to a kubelet</td><td>Denied through the kubelet's SubjectAccessReview</td><td class="fig">290s<span class="sub">kubelet cache, 5m default</span></td><td class="fig ok">pass</td></tr>
+      <tr><td class="name">cluster-admin through an RBAC group</td><td>Denied; RBAC grants don't apply after an explicit deny</td><td class="fig">0s</td><td class="fig ok">pass</td></tr>
+      <tr><td class="name">Other users</td><td>Unaffected</td><td class="fig">–</td><td class="fig ok">pass</td></tr>
+      <tr><td class="name">kubeadm <code>admin.conf</code>, controller-manager, scheduler</td><td>Found in use and added to the inventory, though never issued through a CSR</td><td class="fig">&lt;15s</td><td class="fig ok">pass</td></tr>
+      <tr><td class="name">Credential ID vs <code>kubectl auth whoami</code></td><td>Identical</td><td class="fig">–</td><td class="fig ok">pass</td></tr>
+      <tr><td class="name">Webhook scaled to zero</td><td>Revoked certificate works again (fails open by design), and is denied again once the webhook is back</td><td class="fig">0s</td><td class="fig ok">pass</td></tr>
+      <tr class="pinned"><td class="name"><span class="pin-dot"></span>kubeadm <code>super-admin.conf</code></td><td><code>system:masters</code> is allowed before any webhook runs, so revoking it has no effect. Expected.</td><td class="fig">–</td><td class="fig">limit</td></tr>
+    </tbody>
+    <tfoot><tr><td>Foot · 8 shown<span class="sub">of 26 checks; all are in the README</span></td><td>7 pass + 1 known limit<span class="sub">counted down this column</span></td><td class="fig">290s max<span class="sub">slowest path: the kubelet cache</span></td><td class="fig">26 / 26<span class="sub">checks passed</span></td></tr></tfoot>
+  </table>
+  </div>
+</section>
+
+<section id="shots" aria-labelledby="shots-title">
+  <div class="section-head">
+    <h2 id="shots-title">The portal</h2>
+    <p>Every certificate the cluster has issued or used, with its validity, when it was last seen, and one action. The portal and this site share one design: flat cells, cyan for what's selected, copper only for revocations.</p>
+  </div>
+  <div class="grid">
+    <figure class="shot span-12"><img src="assets/screenshots/inventory.png" alt="The inventory: view cells for active, revoked, expired and all certificates above a ledger of certificates with Revoke actions" loading="lazy" width="1440" height="1000"><figcaption>Inventory: CSR-issued and observed certificates</figcaption></figure>
+    <figure class="shot span-6"><img src="assets/screenshots/cert.png" alt="A revoked certificate's page showing the reason, who revoked it, the denied-request count and when the revocation will be removed" loading="lazy" width="1440" height="1000"><figcaption>A revoked certificate, with its denied-request count</figcaption></figure>
+    <figure class="shot span-6"><img src="assets/screenshots/inspect.png" alt="The Inspect page computing the credential ID of kubeadm's super-admin certificate and flagging system:masters as not enforceable" loading="lazy" width="1440" height="1150"><figcaption>Inspect: <code>super-admin.conf</code> flagged as not enforceable</figcaption></figure>
+  </div>
+</section>
+
+<section id="limits" aria-labelledby="limits-title">
+  <div class="section-head">
+    <h2 id="limits-title">Decisions before you deploy</h2>
+    <p>certrevoker is a proof of concept. These trade-offs are yours to accept or change.</p>
+  </div>
+  <div class="grid">
+    <div class="cell pinned span-4"><span class="label"><span class="pin-dot"></span>Fails open</span><p>The kubelets, controller-manager and scheduler authenticate with client certificates, so the webhook uses <code>failurePolicy: NoOpinion</code>. A certrevoker outage then can't break the cluster, but revoked certificates work until it's back.</p></div>
+    <div class="cell pinned span-4"><span class="label"><span class="pin-dot"></span>system:masters is out of reach</span><p>No authorizer can deny that group. Keep certificates like kubeadm's <code>super-admin.conf</code> offline. If one leaks, rotating the CA is still the only fix.</p></div>
+    <div class="cell pinned span-4"><span class="label"><span class="pin-dot"></span>Caches set the delay</span><p>About 10s at kube-apiserver (<code>unauthorizedTTL</code>), but up to 5 minutes for requests sent directly to a kubelet, unless kubelets lower <code>cacheAuthorizedTTL</code>. Requests already in progress continue.</p></div>
+  </div>
+  <div class="grid">
+    <div class="cell tight span-3"><span class="label">Visibility</span>Certificates signed outside the CSR API appear only once they're used, without validity dates unless you paste them in.</div>
+    <div class="cell tight span-3"><span class="label">CA key compromise</span>Anyone holding the CA key can mint new certificates. Revocation lists can't fix that; only CA rotation can.</div>
+    <div class="cell tight span-3"><span class="label">Hardening</span>Single replica, script-generated TLS, in-memory portal sessions, and no login rate limit.</div>
+    <div class="cell tight span-3"><span class="label">Requirements</span>Kubernetes 1.32 or later, with root on the control-plane nodes to change kube-apiserver's flags. Managed services don't allow that.</div>
+  </div>
+</section>
+
+<section id="deploy" aria-labelledby="deploy-title">
+  <div class="section-head">
+    <h2 id="deploy-title">Deploy</h2>
+    <p>Four steps on a kubeadm-style cluster. The <a href="https://github.com/raesene/certrevoker#deploy">README</a> has the details and how to roll back.</p>
+  </div>
+  <div class="grid">
+    <div class="cell span-3"><span class="label">1 · Build</span><p>Build the binary and image, then import the image into containerd on the control-plane node.</p><pre><code>go build -o bin/certrevoker \
+  ./cmd/certrevoker
+docker build -t certrevoker:dev .</code></pre></div>
+    <div class="cell span-3"><span class="label">2 · TLS</span><p>A private CA for the webhook and portal, and the client certificate kube-apiserver uses to call the webhook.</p><pre><code>./scripts/gen-certs.sh tls \
+  &lt;control-plane-ip&gt;</code></pre></div>
+    <div class="cell span-3"><span class="label">3 · Install</span><p>CRDs, RBAC and the Deployment, installed before kube-apiserver starts calling the webhook.</p><pre><code>kubectl apply -f deploy/
+kubectl apply -f tls/secret.yaml</code></pre></div>
+    <div class="cell span-3"><span class="label">4 · Authorize</span><p>Swap <code>--authorization-mode</code> for the structured config, which keeps Node and RBAC after the webhook.</p><pre><code>--authorization-config=
+/etc/kubernetes/certrevoker/
+authz-config.yaml</code></pre></div>
+  </div>
+</section>
+
+<section aria-labelledby="upstream-title">
+  <div class="grid">
+    <div class="cell span-7">
+      <h2 id="upstream-title">Upstream</h2>
+      <p>The likely long-term fix is SIG Auth's <a href="https://github.com/kubernetes/enhancements/issues/6285">KEP-6285</a>, structured x509 authentication configuration. It adds CEL validation rules that can reject specific credential IDs during authentication, which would also cover <code>system:masters</code>. It is still provisional. certrevoker shows what is possible now, and the gaps a built-in mechanism has to close: kubelets, caches, and knowing which certificates exist.</p>
+    </div>
+    <div class="cell span-5">
+      <span class="label">Source</span>
+      <p>Written in Go on the Kubernetes client libraries. Unit tests run in CI, and an end-to-end script drives a real cluster.</p>
+      <p><a href="https://github.com/raesene/certrevoker">github.com/raesene/certrevoker</a></p>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <p>certrevoker is a proof of concept and is not affiliated with the Kubernetes project.</p>
+  <p>Design: <a href="https://katagami.ai/language/en-01a1016d-85de-78d0-8a51-df79bee46564">Reticle Ledger</a> from Katagami. Type: Manrope, Hanken Grotesk and Roboto Mono, under the SIL Open Font License 1.1.</p>
+</footer>
+</div>
+</body>
+</html>

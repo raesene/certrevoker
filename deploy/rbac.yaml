@@ -1,0 +1,84 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: certrevoker
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: certrevoker
+  namespace: certrevoker
+---
+# Permissions for the certrevoker process itself.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: certrevoker
+rules:
+- apiGroups: [certificates.k8s.io]
+  resources: [certificatesigningrequests]
+  verbs: [get, list, watch]
+- apiGroups: [certrevoker.example.com]
+  resources: [issuedcertificates]
+  verbs: [get, list, watch, create, update, delete]
+- apiGroups: [certrevoker.example.com]
+  resources: [issuedcertificates/status, certificaterevocations/status]
+  verbs: [update]
+# delete is only used to garbage-collect revocations for expired certificates.
+- apiGroups: [certrevoker.example.com]
+  resources: [certificaterevocations]
+  verbs: [get, list, watch, delete]
+# Portal login: validate admin tokens and check their permissions.
+- apiGroups: [authentication.k8s.io]
+  resources: [tokenreviews]
+  verbs: [create]
+- apiGroups: [authorization.k8s.io]
+  resources: [subjectaccessreviews]
+  verbs: [create]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: certrevoker
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: certrevoker}
+subjects:
+- {kind: ServiceAccount, name: certrevoker, namespace: certrevoker}
+---
+# For people who may revoke certificates through the portal (or kubectl).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: certrevoker-admin
+rules:
+- apiGroups: [certrevoker.example.com]
+  resources: [issuedcertificates]
+  verbs: [get, list, watch]
+- apiGroups: [certrevoker.example.com]
+  resources: [certificaterevocations]
+  verbs: [get, list, watch, create, delete]
+---
+# Read-only view of the inventory and revocations.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: certrevoker-viewer
+rules:
+- apiGroups: [certrevoker.example.com]
+  resources: [issuedcertificates, certificaterevocations]
+  verbs: [get, list, watch]
+---
+# Demo administrator identity for logging in to the portal:
+#   kubectl -n certrevoker create token revocation-admin --duration=1h
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: revocation-admin
+  namespace: certrevoker
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: certrevoker-demo-admin
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: certrevoker-admin}
+subjects:
+- {kind: ServiceAccount, name: revocation-admin, namespace: certrevoker}

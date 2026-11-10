@@ -1,0 +1,117 @@
+# Custom resources for the certrevoker PoC.
+#
+# Object names are derived from the credential ID ("sha256-<hex>"), and CEL
+# validation enforces that. That gives one object per credential and O(1)
+# lookups in the webhook, and stops a revocation from being created under a
+# misleading name.
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: issuedcertificates.certrevoker.example.com
+spec:
+  group: certrevoker.example.com
+  scope: Cluster
+  names:
+    plural: issuedcertificates
+    singular: issuedcertificate
+    kind: IssuedCertificate
+    shortNames: [issuedcert]
+  versions:
+  - name: v1alpha1
+    served: true
+    storage: true
+    subresources:
+      status: {}
+    additionalPrinterColumns:
+    - {name: CN, type: string, jsonPath: .spec.commonName}
+    - {name: Seen-As, type: string, jsonPath: .status.seenAsUser}
+    - {name: Source, type: string, jsonPath: .spec.source}
+    - {name: Signer, type: string, jsonPath: .spec.signerName, priority: 1}
+    - {name: Not-After, type: string, jsonPath: .spec.notAfter}
+    - {name: Last-Seen, type: date, jsonPath: .status.lastSeen}
+    schema:
+      openAPIV3Schema:
+        type: object
+        required: [spec]
+        x-kubernetes-validations:
+        - rule: "self.metadata.name == 'sha256-' + self.spec.credentialID.substring(11)"
+          message: "metadata.name must be 'sha256-' followed by the hex digest from spec.credentialID"
+        properties:
+          spec:
+            type: object
+            required: [credentialID, source]
+            properties:
+              credentialID:
+                type: string
+                pattern: '^X509SHA256=[0-9a-f]{64}$'
+                x-kubernetes-validations:
+                - {rule: "self == oldSelf", message: "credentialID is immutable"}
+              source: {type: string, enum: [CSR, Observed]}
+              commonName: {type: string, maxLength: 1024}
+              organizations: {type: array, maxItems: 64, items: {type: string, maxLength: 1024}}
+              serialNumber: {type: string, maxLength: 128}
+              issuer: {type: string, maxLength: 2048}
+              notBefore: {type: string, format: date-time}
+              notAfter: {type: string, format: date-time}
+              signerName: {type: string, maxLength: 571}
+              csrName: {type: string, maxLength: 253}
+              csrUID: {type: string, maxLength: 64}
+              requestor: {type: string, maxLength: 1024}
+              certificatePEM: {type: string, maxLength: 16384}
+          status:
+            type: object
+            properties:
+              firstSeen: {type: string, format: date-time}
+              lastSeen: {type: string, format: date-time}
+              seenAsUser: {type: string, maxLength: 1024}
+              seenGroups: {type: array, maxItems: 64, items: {type: string, maxLength: 1024}}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: certificaterevocations.certrevoker.example.com
+spec:
+  group: certrevoker.example.com
+  scope: Cluster
+  names:
+    plural: certificaterevocations
+    singular: certificaterevocation
+    kind: CertificateRevocation
+    shortNames: [certrevocation]
+  versions:
+  - name: v1alpha1
+    served: true
+    storage: true
+    subresources:
+      status: {}
+    additionalPrinterColumns:
+    - {name: CN, type: string, jsonPath: .spec.commonName}
+    - {name: Reason, type: string, jsonPath: .spec.reason}
+    - {name: Revoked-By, type: string, jsonPath: .spec.revokedBy}
+    - {name: Denied, type: integer, jsonPath: .status.deniedRequests}
+    - {name: Age, type: date, jsonPath: .metadata.creationTimestamp}
+    schema:
+      openAPIV3Schema:
+        type: object
+        required: [spec]
+        x-kubernetes-validations:
+        - rule: "self.metadata.name == 'sha256-' + self.spec.credentialID.substring(11)"
+          message: "metadata.name must be 'sha256-' followed by the hex digest from spec.credentialID"
+        properties:
+          spec:
+            type: object
+            required: [credentialID]
+            x-kubernetes-validations:
+            - {rule: "self == oldSelf", message: "a revocation is immutable; delete and recreate it instead"}
+            properties:
+              credentialID: {type: string, pattern: '^X509SHA256=[0-9a-f]{64}$'}
+              reason: {type: string, maxLength: 256}
+              revokedBy: {type: string, maxLength: 1024}
+              commonName: {type: string, maxLength: 1024}
+              notAfter: {type: string, format: date-time}
+          status:
+            type: object
+            properties:
+              deniedRequests: {type: integer, format: int64, minimum: 0}
+              lastDenied: {type: string, format: date-time}
+              lastDeniedUser: {type: string, maxLength: 1024}

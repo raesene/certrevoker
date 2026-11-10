@@ -1,0 +1,236 @@
+/*
+ * certrevoker portal, in the Reticle Ledger design language (katagami.ai).
+ * A ledger drawn as a visible grid of cells: flat mist cells parted by 6px of
+ * white, cyan for what is live or under the pointer, copper for the decisions
+ * a person must sign (revocations). Radius 0 everywhere except the pin dot.
+ * No borders, shadows or gradients. Fonts are self-hosted (SIL OFL 1.1).
+ */
+@font-face { font-family: "Hanken Grotesk"; font-style: normal; font-weight: 400 600; font-display: swap; src: url("fonts/hanken-grotesk.woff2") format("woff2"); }
+@font-face { font-family: "Manrope"; font-style: normal; font-weight: 700 800; font-display: swap; src: url("fonts/manrope.woff2") format("woff2"); }
+@font-face { font-family: "Roboto Mono"; font-style: normal; font-weight: 500 600; font-display: swap; src: url("fonts/roboto-mono.woff2") format("woff2"); }
+
+:root {
+  --color-bg: #FFFFFF;
+  --color-surface: #F3F6F9;
+  --color-text: #16202B;
+  --color-muted: #4F5B69;
+  --color-border: #DBE3EA;
+  --color-accent: #00779C;
+  --color-accent-hover: #006383;
+  --color-accent-soft: #E3F6FB;
+  --color-accent-2: #9A512C;
+  --color-accent-2-soft: #F6ECE4;
+  --color-on-accent: #FFFFFF;
+  --color-success: #2F7D66;
+  --color-warning: #9A512C;
+  --color-error: #B94B4B;
+  --color-info: #00779C;
+  --space-1: 6px; --space-2: 12px; --space-3: 16px; --space-4: 24px; --space-5: 36px; --space-6: 48px; --space-7: 64px;
+  --gap: 6px;
+  --motion: 120ms ease;
+  --font-body: "Hanken Grotesk", system-ui, sans-serif;
+  --font-heading: "Manrope", "Hanken Grotesk", system-ui, sans-serif;
+  --font-mono: "Roboto Mono", ui-monospace, monospace;
+  --type-1: 14.5px; --type-2: 17px; --type-3: 20px; --type-4: 26px; --type-5: 36px; --type-6: 58px;
+  --hero-image: url("hero.webp");
+}
+
+* { box-sizing: border-box; }
+html { background: var(--color-bg); }
+body {
+  margin: 0; color: var(--color-text); background: var(--color-bg);
+  font: 400 var(--type-2)/1.55 var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+.wrap { max-width: 1280px; margin: 0 auto; padding: 0 var(--space-4); }
+h1, h2, h3 { font-family: var(--font-heading); font-weight: 800; letter-spacing: -0.025em; line-height: 1.1; margin: 0; }
+h1 { font-size: var(--type-5); }
+h2 { font-size: var(--type-4); }
+h3 { font-size: var(--type-3); font-weight: 700; letter-spacing: -0.01em; }
+p { margin: 0; }
+a { color: var(--color-accent); font-weight: 600; text-decoration: none; }
+a:hover { text-decoration: underline; text-underline-offset: 3px; }
+:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+code, .mono { font-family: var(--font-mono); font-weight: 500; font-variant-numeric: tabular-nums; letter-spacing: 0; }
+code { font-size: 0.9em; }
+.wrapbreak { word-break: break-all; }
+.muted { color: var(--color-muted); }
+.sub { display: block; font-family: var(--font-mono); font-size: var(--type-1); font-weight: 500; color: var(--color-muted); line-height: 1.4; }
+
+/* ---- masthead: a row of cells without fill ---- */
+.masthead { display: flex; align-items: center; gap: var(--space-5); padding: var(--space-4) 0; }
+.wordmark { display: flex; align-items: center; gap: 10px; color: var(--color-text); font-family: var(--font-heading); font-weight: 800; font-size: var(--type-3); letter-spacing: -0.025em; }
+.wordmark:hover { text-decoration: none; }
+.wordmark svg { width: 22px; height: 22px; }
+.wordmark .tag { font-family: var(--font-mono); font-weight: 500; font-size: var(--type-1); color: var(--color-muted); letter-spacing: 0; }
+.masthead nav { display: flex; gap: var(--space-4); }
+.masthead nav a { color: var(--color-text); font-weight: 400; text-decoration: underline; text-underline-offset: 4px; text-decoration-thickness: 1px; }
+.masthead nav a[aria-current="page"] { font-weight: 600; text-decoration: none; }
+.masthead .who { margin-left: auto; display: flex; align-items: center; gap: var(--space-3); }
+.masthead .who .id { font-family: var(--font-mono); font-size: var(--type-1); color: var(--color-muted); }
+.chip { display: inline-block; padding: 1px 7px; font-family: var(--font-mono); font-size: 13px; font-weight: 500; background: var(--color-bg); color: var(--color-text); white-space: nowrap; }
+.chip.live { background: var(--color-accent-soft); color: var(--color-accent); }
+.chip.pin { background: var(--color-accent-2-soft); color: var(--color-accent-2); }
+.chip.bad { color: var(--color-error); }
+
+main { padding-bottom: var(--space-7); }
+.page-head { display: grid; grid-template-columns: 7fr 5fr; gap: var(--gap); align-items: end; margin: var(--space-4) 0 var(--space-4); }
+.page-head p { color: var(--color-muted); margin-top: var(--space-2); max-width: 60ch; }
+
+/* ---- the grid of cells ---- */
+.grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: var(--gap); margin-bottom: var(--gap); }
+.cell { background: var(--color-surface); padding: var(--space-4); min-width: 0; }
+.cell.tight { padding: var(--space-3); }
+.span-3 { grid-column: span 3; } .span-4 { grid-column: span 4; } .span-5 { grid-column: span 5; }
+.span-6 { grid-column: span 6; } .span-7 { grid-column: span 7; } .span-8 { grid-column: span 8; } .span-12 { grid-column: span 12; }
+.cell h2 { margin-bottom: var(--space-3); }
+.cell h3 { margin-bottom: var(--space-2); }
+.cell p + p { margin-top: var(--space-2); }
+.cell .label { display: block; font-family: var(--font-mono); font-size: var(--type-1); font-weight: 600; color: var(--color-muted); margin-bottom: var(--space-1); }
+
+/* figure cells; as view tabs they are links */
+.figure { display: block; background: var(--color-surface); padding: var(--space-3) var(--space-4); color: var(--color-text); font-weight: 400; transition: background-color var(--motion), color var(--motion); }
+.figure:hover { text-decoration: none; background: var(--color-accent-soft); }
+.figure .num { display: block; font-family: var(--font-mono); font-weight: 500; font-size: var(--type-4); line-height: 1.2; font-variant-numeric: tabular-nums; }
+.figure .what { display: block; font-family: var(--font-heading); font-weight: 700; letter-spacing: -0.01em; margin-bottom: 2px; }
+.figure.pinned { background: var(--color-accent-2-soft); }
+.figure.pinned .num { color: var(--color-accent-2); }
+.figure.on, .figure.on:hover { background: var(--color-accent); color: var(--color-on-accent); }
+.figure.on .num, .figure.on .sub { color: var(--color-on-accent); }
+.pin-dot { display: inline-block; width: 12px; height: 12px; border-radius: 9999px; background: var(--color-accent-2); vertical-align: middle; margin-right: 6px; }
+
+/* ---- controls ---- */
+input[type=text], input[type=search], textarea {
+  width: 100%; font: 400 var(--type-2)/1.4 var(--font-body); color: var(--color-text);
+  background: var(--color-bg); border: 0; border-radius: 0; padding: 10px 12px;
+  border-bottom: 2px solid transparent; transition: border-color var(--motion);
+}
+textarea { font-family: var(--font-mono); font-size: var(--type-1); resize: vertical; }
+input:focus, textarea:focus { outline: none; border-bottom-color: var(--color-accent); }
+input::placeholder, textarea::placeholder { color: var(--color-muted); opacity: .8; }
+.field-error { border-bottom-color: var(--color-error) !important; }
+button {
+  font: 600 var(--type-2)/1 var(--font-body); border: 0; border-radius: 0; cursor: pointer;
+  height: 48px; padding: 0 var(--space-4); white-space: nowrap;
+  transition: background-color var(--motion), color var(--motion);
+}
+button.primary { background: var(--color-accent); color: var(--color-on-accent); }
+button.primary:hover { background: var(--color-accent-hover); }
+button.sign { background: var(--color-accent-2); color: var(--color-on-accent); }   /* copper: a decision */
+button.sign:hover { text-decoration: underline; text-underline-offset: 3px; }
+button.quiet { background: var(--color-bg); color: var(--color-text); }
+button.quiet:hover { background: var(--color-accent-soft); }
+button.link { height: auto; padding: 0; background: none; color: var(--color-accent); }
+button.link:hover { text-decoration: underline; text-underline-offset: 3px; }
+button.small { height: 38px; padding: 0 var(--space-3); font-size: 15px; }
+form.row { display: flex; gap: var(--gap); align-items: stretch; }
+form.row input { flex: 1; }
+form.inline { display: inline; }
+.stack > * + * { margin-top: var(--space-2); }
+
+/* ---- notices ---- */
+.toast { background: var(--color-text); color: var(--color-bg); padding: var(--space-3) var(--space-4); margin-bottom: var(--gap); font-size: var(--type-2); }
+.toast a { color: var(--color-accent-soft); }
+.alert { background: var(--color-surface); padding: var(--space-3) var(--space-4); color: var(--color-error); margin-bottom: var(--gap); }
+.alert strong { font-weight: 600; }
+.alert.warn { color: var(--color-warning); background: var(--color-accent-2-soft); }
+
+/* ---- the ledger table: cells parted by 6px, no lines ---- */
+.ledger-wrap { overflow-x: auto; margin: 0 calc(-1 * var(--gap)); }
+table.ledger { width: 100%; border-collapse: separate; border-spacing: var(--gap); font-size: 15px; }
+.ledger th { text-align: left; font-family: var(--font-mono); font-size: var(--type-1); font-weight: 600; color: var(--color-muted); padding: 0 12px 2px; white-space: nowrap; }
+.ledger td { background: var(--color-surface); padding: 12px; vertical-align: top; transition: background-color var(--motion), color var(--motion); }
+.ledger td.name a { font-family: var(--font-heading); font-weight: 700; letter-spacing: -0.01em; color: var(--color-text); }
+.ledger td.name a:hover { color: var(--color-accent); }
+.ledger td.fig { font-family: var(--font-mono); font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; font-size: 14.5px; }
+.ledger td .sub { font-size: 13px; }
+.ledger td.fig .sub { white-space: nowrap; }
+.ledger td.name .sub { font-size: 13px; }
+.ledger td.act { background: transparent; padding: 6px 0 0; white-space: nowrap; }
+.ledger .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.status { font-family: var(--font-mono); font-size: var(--type-1); font-weight: 500; white-space: nowrap; }
+.status.ok { color: var(--color-success); }
+.status.gone { color: var(--color-muted); }
+.status.bad { color: var(--color-error); }
+.ledger td.pinned { background: var(--color-accent-2-soft); }
+.ledger td.pinned .status { color: var(--color-accent-2); }
+.ledger tr.expired td:not(.act) { color: var(--color-muted); }
+.ledger tfoot td { background: var(--color-text); color: var(--color-bg); }
+.ledger tfoot td .sub { color: var(--color-border); }
+.ledger tfoot td.act { background: transparent; }
+form.revoke { display: flex; gap: var(--gap); }
+form.revoke input[type=text] { width: 14em; height: 38px; padding: 6px 10px; font-size: 15px; background: var(--color-bg); }
+.ledger form.revoke { flex-direction: column; width: 8em; }
+.ledger form.revoke input[type=text] { width: 100%; background: var(--color-surface); }
+.ledger form.revoke button { width: 100%; }
+
+/* crosshair: row and column pale cyan, the cell itself solid cyan (CSS only) */
+.ledger tbody tr:hover td:not(.act):not(.pinned), .ledger tbody tr:focus-within td:not(.act):not(.pinned) { background: var(--color-accent-soft); }
+.ledger:has(tbody td:nth-child(2):hover) tbody td:nth-child(2):not(.pinned),
+.ledger:has(tbody td:nth-child(3):hover) tbody td:nth-child(3):not(.pinned),
+.ledger:has(tbody td:nth-child(4):hover) tbody td:nth-child(4):not(.pinned),
+.ledger:has(tbody td:nth-child(5):hover) tbody td:nth-child(5):not(.pinned),
+.ledger:has(tbody td:nth-child(6):hover) tbody td:nth-child(6):not(.pinned) { background: var(--color-accent-soft); }
+.ledger tbody td.fig:hover, .ledger tbody td.fig:focus-within { background: var(--color-accent) !important; color: var(--color-on-accent); }
+.ledger tbody td.fig:hover .sub, .ledger tbody td.fig:hover .status, .ledger tbody td.fig:hover a { color: var(--color-on-accent); }
+.ledger tbody td.fig:hover .chip { background: transparent; color: var(--color-on-accent); }
+
+.empty { display: grid; grid-template-columns: auto 1fr; gap: var(--space-3); align-items: start; }
+.empty svg { width: 32px; height: 32px; color: var(--color-muted); }
+
+/* ---- definition cells (detail pages) ---- */
+.facts { display: grid; grid-template-columns: minmax(150px, 1fr) 3fr; gap: var(--gap); }
+.facts dt, .facts dd { margin: 0; background: var(--color-bg); padding: 10px var(--space-3); }
+.facts dt { font-family: var(--font-mono); font-size: var(--type-1); font-weight: 600; color: var(--color-muted); }
+.facts dd.pinned { background: var(--color-accent-2-soft); color: var(--color-accent-2); }
+details summary { cursor: pointer; font-weight: 600; color: var(--color-accent); margin-top: var(--space-3); }
+pre { background: var(--color-bg); padding: var(--space-3); overflow: auto; font: 500 13px/1.5 var(--font-mono); }
+
+/* ---- login: head cell beside the image cell ---- */
+.hero { display: grid; grid-template-columns: 5fr 7fr; gap: var(--gap); margin-top: var(--space-2); }
+.hero .head { background: var(--color-surface); padding: var(--space-5) var(--space-5) var(--space-4); }
+.hero .head h1 { font-size: 46px; margin: var(--space-2) 0 var(--space-3); }
+.hero .head .lede { color: var(--color-muted); margin-bottom: var(--space-4); }
+.hero .head textarea { min-height: 120px; }
+.hero .head .hint { margin-top: var(--space-2); font-size: var(--type-1); color: var(--color-muted); }
+.hero .image { background-color: var(--color-surface); background-image: var(--hero-image); background-size: cover; background-position: center; min-height: 520px; }
+.hero .figs { display: grid; grid-template-columns: 1fr 1fr; gap: var(--gap); grid-column: 1; }
+.hero .figs .figure:hover { background: var(--color-surface); }
+
+footer { padding: var(--space-4) 0 var(--space-5); color: var(--color-muted); font-size: var(--type-1); }
+footer code { font-size: 1em; }
+
+@media (max-width: 1199px) {
+  .hero { grid-template-columns: 1fr; }
+  .hero .image { min-height: 280px; }
+  .page-head { grid-template-columns: 1fr; }
+  .span-3 { grid-column: span 6; } .span-5, .span-7, .span-8 { grid-column: span 12; }
+}
+@media (max-width: 900px) {
+  .ledger thead { display: none; }
+  .ledger, .ledger tbody, .ledger tfoot, .ledger tr, .ledger td { display: block; }
+  .ledger tr { margin-bottom: var(--space-2); }
+  .ledger td { margin-bottom: 2px; }
+  .ledger td[data-label]::before { content: attr(data-label); display: block; font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--color-muted); }
+  .masthead { flex-wrap: wrap; gap: var(--space-3); }
+  .span-3, .span-4, .span-6 { grid-column: span 12; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+}
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.stack-col { display: grid; gap: var(--gap); align-content: start; }
+.hero .figs { grid-column: auto; }
+.hero .figure .num { font-size: var(--type-3); }
+.search-cell { background: var(--color-surface); padding: var(--gap); }
+.search-cell input[type=search] { background: var(--color-bg); }
+.ledger tfoot td.fig, .ledger tfoot td.fig .sub, .ledger tfoot td .sub { white-space: normal; }
+.ledger tfoot td.fig { min-width: 7em; }
+/* In the ledger, Revoke is a quiet copper word until pointed at: copper fill is
+   kept for the one decision in view (detail and Inspect pages). */
+.ledger button.sign { background: var(--color-bg); color: var(--color-accent-2); }
+.ledger button.sign:hover, .ledger button.sign:focus-visible { background: var(--color-accent-2); color: var(--color-on-accent); }
+.facts dd { min-width: 0; overflow-wrap: anywhere; }
+.cell.empty { margin-bottom: var(--gap); }
+.ledger button.quiet { background: var(--color-surface); }
+.ledger button.quiet:hover { background: var(--color-accent-soft); }

@@ -1,0 +1,36 @@
+# kube-apiserver authorization configuration (--authorization-config).
+# Replaces --authorization-mode=Node,RBAC. Copy to
+# /etc/kubernetes/certrevoker/authz-config.yaml on each control-plane node.
+apiVersion: apiserver.config.k8s.io/v1
+kind: AuthorizationConfiguration
+authorizers:
+# Must come before Node and RBAC: those can only allow, and the first allow wins.
+- type: Webhook
+  name: certrevoker
+  webhook:
+    timeout: 2s
+    subjectAccessReviewVersion: v1
+    matchConditionSubjectAccessReviewVersion: v1
+    # If the webhook is down, carry on to Node/RBAC. In kubeadm clusters the
+    # kubelets, controller-manager and scheduler authenticate with client
+    # certificates, so "Deny" here would break the cluster during an outage.
+    failurePolicy: NoOpinion
+    # We never return "allowed", so this cache is unused; keep it off.
+    authorizedTTL: 1m
+    cacheAuthorizedRequests: false
+    # "No opinion" and "deny" answers are cached under this TTL. It is the
+    # upper bound on how long a new revocation takes to apply.
+    unauthorizedTTL: 10s
+    cacheUnauthorizedRequests: true
+    connectionInfo:
+      type: KubeConfigFile
+      kubeConfigFile: /etc/kubernetes/certrevoker/authz-webhook.kubeconfig
+    # Only send requests authenticated by an x509 client certificate.
+    matchConditions:
+    - expression: >-
+        'authentication.kubernetes.io/credential-id' in request.extra &&
+        request.extra['authentication.kubernetes.io/credential-id'].exists(c, c.startsWith('X509SHA256='))
+- type: Node
+  name: node
+- type: RBAC
+  name: rbac

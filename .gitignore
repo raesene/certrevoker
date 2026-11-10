@@ -1,0 +1,10 @@
+# build output
+bin/
+_site/
+# generated TLS material (contains private keys)
+tls/
+*.key
+*.kubeconfig
+# local-only design references (not for publication)
+DESIGN.md
+docs/design-options/

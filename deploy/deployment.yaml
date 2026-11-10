@@ -1,0 +1,58 @@
+# Runs on the control-plane node with host networking so kube-apiserver can
+# reach the webhook at https://127.0.0.1:9443 without depending on cluster DNS
+# or Service routing. The portal listens on the node's IP, port 8443.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: certrevoker
+  namespace: certrevoker
+  labels: {app: certrevoker}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}   # host ports can't be shared during a rolling update
+  selector:
+    matchLabels: {app: certrevoker}
+  template:
+    metadata:
+      labels: {app: certrevoker}
+    spec:
+      serviceAccountName: certrevoker
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      priorityClassName: system-cluster-critical
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: ""
+      tolerations:
+      - {key: node-role.kubernetes.io/control-plane, operator: Exists, effect: NoSchedule}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+      - name: certrevoker
+        image: docker.io/library/certrevoker:dev
+        imagePullPolicy: Never
+        args:
+        - --webhook-addr=127.0.0.1:9443
+        - --portal-addr=0.0.0.0:8443
+        ports:
+        - {name: portal, containerPort: 8443}
+        readinessProbe:
+          httpGet: {path: /healthz, port: 8443, scheme: HTTPS}
+          periodSeconds: 10
+        resources:
+          requests: {cpu: 50m, memory: 64Mi}
+          limits: {memory: 256Mi}
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities: {drop: [ALL]}
+        volumeMounts:
+        - {name: tls, mountPath: /etc/certrevoker/tls, readOnly: true}
+      volumes:
+      - name: tls
+        secret:
+          secretName: certrevoker-tls
+          defaultMode: 0440
